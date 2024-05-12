@@ -42,11 +42,12 @@ def get_session_history(session_id: str) -> BaseChatMessageHistory:
         STORE[session_id] = ChatMessageHistory()
     return STORE[session_id]
 
-def create_backend(build_index=False, docs=None):
+def create_backend(secrets=None, build_index=False, docs=None):
 
     vector_store = None
 
-    secrets = config.Secrets()
+    if secrets is None:
+        secrets = config.Secrets()
 
     pinecone_api_key = secrets.pinecone_api_key
     openai_api_key = secrets.openai_api_key
@@ -56,12 +57,12 @@ def create_backend(build_index=False, docs=None):
 
     os.environ["OPENAI_API_KEY"] = openai_api_key
     os.environ["PINECONE_API_KEY"] = pinecone_api_key
-    os.environ["PINECONE_INDEX_NAME"] = "rag-news-03122023"
+    os.environ["PINECONE_INDEX_NAME"] = secrets.index_name
 
     pc = Pinecone(api_key=pinecone_api_key)
 
     environment = "gcp-starter"
-    index_name = "rag-news-03122023"
+    index_name = secrets.index_name
 
     llm = ChatOpenAI(openai_api_key=openai_api_key,model="gpt-3.5-turbo", temperature=0)
     
@@ -101,7 +102,7 @@ def create_backend(build_index=False, docs=None):
         vector_store = pine(index, embeddings.embed_query, text_field, namespace="fdf")
         print("vector_store = ", vector_store)
     else:
-        searcher = PineconeVectorStore(pinecone_api_key=pinecone_api_key, index_name="rag-news-03122023", embedding=embeddings)
+        searcher = PineconeVectorStore(pinecone_api_key=pinecone_api_key, index_name=index_name, embedding=embeddings)
         retriever = searcher.as_retriever()
         # retriever.search_kwargs['maximal_marginal_relevance'] = True
         retriever.search_kwargs['k'] = 3
@@ -109,13 +110,11 @@ def create_backend(build_index=False, docs=None):
 
     return llm, embeddings, retriever
 
-# def get_stock_holdings():
-#   json_file_path = "holdings.json"  # Replace with the actual path to your holdings JSON file
-#    stock_holdings = read_json_and_extract(json_file_path)
-#    return stock_holdings
 
 def converse(docs=None, chain_type='stuff'):
-    logfile = "../logs/rag.log"
+    secrets = config.Secrets()
+
+    logfile = secrets.logs_file
     logger.add(logfile, colorize=True, enqueue=True)
     handler = FileCallbackHandler(logfile)
     
@@ -126,7 +125,8 @@ def converse(docs=None, chain_type='stuff'):
         print("llm = ", llm)
         print("vector_store = ", vector_store)
 
-    
+    # Flow for getting a RAG answer from LLM using retrieval chain
+    # Logical this should be extensible to a chat. Unfortunately did not work
     '''
     prompt = ChatPromptTemplate.from_template("""Answer the following question based only on the provided context:
         <context>
@@ -143,7 +143,8 @@ def converse(docs=None, chain_type='stuff'):
     response = retrieval_chain.invoke({"input": "Who fired Sam Altman?"})
     print(response["answer"])
     '''
-    
+
+    # A flow to run with Chat History. For a Chat Application
     prompt_search = ChatPromptTemplate.from_messages([
         MessagesPlaceholder(variable_name="chat_history"),
         ("user", "{input}"),
@@ -169,13 +170,15 @@ def converse(docs=None, chain_type='stuff'):
         output_messages_key="answer",
     )
 
+    # This is a template for Chat History but I could not figure out how to make this continuously
+    # updated as the chat runs
+
     # chat_history = [HumanMessage(content="Was Sam Altman Fired?"), AIMessage(content="Yes!")]
     # temp = conversation_chain.invoke({
     #        "chat_history": chat_history,
     #        "input": "Tell me who fired him?"
     #    })
     
-    #chat_history = []#[c]
     qry = ""
     while qry != 'done':
         qry = input('Question: ')
@@ -188,6 +191,9 @@ def converse(docs=None, chain_type='stuff'):
         print(response)
         print('****************************************')
     
+    # Older version of running Chat QA. The flow changed in unexpected ways
+    # Retriever object had a different structrure, vector store as well
+    # This makes maintaining code painful
     '''
         memory = ConversationBufferMemory(
         memory_key="chat_history",
