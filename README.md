@@ -1,4 +1,6 @@
-# rag_workshop
+# Evaluate RAG and Agent Pipelines
+
+Local Setup
 
 Steps
 1. Create an account at Open AI (platform.openai.com). This will require a Credit Card. If you dont have one you can share the key with your friends. If not Divyam or Deepak can share a key.
